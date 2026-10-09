@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from src.search_engine import execute_search
 from src.llm_analyzer import generate_decision_report
 from src.scorer import parse_criteria, format_decision_matrix_markdown
+from src.agents import run_research_pilot_agent_workflow
 
 load_dotenv()
 
@@ -95,12 +96,12 @@ st.markdown("""
 # Application Header
 st.markdown("""
 <div class="main-header">
-    <div class="badge-tag">SERPAPI INDIA HACKATHON 2026</div>
+    <div class="badge-tag">SERPAPI INDIA HACKATHON 2026 &bull; AI AGENTS TRACK</div>
     <h1 style="margin: 0; font-weight: 800; font-size: 2.4rem; color: #f8fafc;">
         🚀 ResearchPilot AI
     </h1>
     <p style="margin-top: 0.5rem; margin-bottom: 0; font-size: 1.1rem; color: #94a3b8;">
-        Evidence-based decision agent powered by <b>SerpApi Live Web Search</b> & <b>Gemini Intelligence</b>
+        Multi-Agent Evidence & Decision System powered by <b>SerpApi Live Search</b> & <b>Gemini Intelligence</b>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -142,7 +143,7 @@ with st.sidebar:
         help="Google Light provides fast, compact live search results via SerpApi."
     )
     
-    num_results = st.slider("Max Search Results", min_value=5, max_value=20, value=10, step=1)
+    max_search_budget = st.slider("Max Search Query Budget", min_value=2, max_value=6, value=4, step=1)
     
     st.subheader("🤖 LLM Model")
     llm_model = st.selectbox(
@@ -218,9 +219,9 @@ with st.form("research_form"):
             key=f"w_slider_{idx}"
         )
     
-    submit_button = st.form_submit_button("🚀 Run Evidence Research & Transparent Scoring", use_container_width=True)
+    submit_button = st.form_submit_button("🚀 Run Multi-Agent Research & Decision Workflow", use_container_width=True)
 
-# Processing Execution
+# Processing Execution via Multi-Agent Workflow
 if submit_button:
     if not question_input.strip():
         st.error("Please enter a research question or decision prompt to analyze.")
@@ -229,46 +230,37 @@ if submit_button:
     elif not active_gemini_key:
         st.error("Gemini API Key is missing. Please set GEMINI_API_KEY in .env or sidebar.")
     else:
-        with st.status("🔍 Executing Evidence Research & Scoring...", expanded=True) as status:
-            # Step 1: Execute Live SerpApi Web Search
-            st.write(f"📡 Querying SerpApi live index (`{search_engine}`)...")
-            search_response = execute_search(
-                query=question_input,
-                engine=search_engine,
-                num_results=num_results,
-                api_key=active_serpapi_key
+        with st.status("🤖 Executing Multi-Agent Research Pipeline...", expanded=True) as status:
+            
+            def handle_agent_status(stage: str, msg: str):
+                st.write(f"**[{stage}]** {msg}")
+            
+            agent_state = run_research_pilot_agent_workflow(
+                question=question_input,
+                priorities_input=priorities_input,
+                criteria_weights=user_weights,
+                search_engine=search_engine,
+                llm_model=llm_model,
+                api_key_serpapi=active_serpapi_key,
+                api_key_gemini=active_gemini_key,
+                max_search_budget=max_search_budget,
+                status_callback=handle_agent_status
             )
             
-            if not search_response["success"]:
-                status.update(label="❌ Search Failed", state="error", expanded=True)
-                st.error(search_response["error"])
+            if not agent_state.success:
+                status.update(label="❌ Multi-Agent Workflow Failed", state="error", expanded=True)
+                st.error(agent_state.error or "Unknown workflow error.")
             else:
-                organic_results = search_response["organic_results"]
-                st.write(f"✓ Retrieved **{len(organic_results)}** live search results from SerpApi.")
+                status.update(label="✅ Multi-Agent Research & Scoring Complete!", state="complete", expanded=False)
                 
-                # Step 2: Synthesize Evidence & Generate Report with Gemini
-                st.write(f"🧠 Computing weighted decision matrix & report with Gemini (`{llm_model}`)...")
-                report_response = generate_decision_report(
-                    question=question_input,
-                    priorities_input=priorities_input,
-                    organic_results=organic_results,
-                    criteria_weights=user_weights,
-                    model_name=llm_model,
-                    api_key=active_gemini_key
-                )
-                
-                if not report_response["success"]:
-                    status.update(label="❌ Decision Analysis Failed", state="error", expanded=True)
-                    st.error(report_response["error"])
-                else:
-                    status.update(label="✅ Evidence Analysis & Scoring Complete!", state="complete", expanded=False)
-                    
-                    st.session_state["last_report"] = report_response["report"]
-                    st.session_state["last_matrix"] = report_response.get("matrix_md", "")
-                    st.session_state["last_sources"] = organic_results
-                    st.session_state["last_model"] = report_response.get("model_used", llm_model)
-                    st.session_state["last_evaluations"] = report_response.get("evaluations", {})
-                    st.session_state["last_weights"] = user_weights
+                st.session_state["last_report"] = agent_state.final_report
+                st.session_state["last_matrix"] = agent_state.matrix_md
+                st.session_state["last_sources"] = agent_state.organic_results
+                st.session_state["last_model"] = agent_state.llm_model
+                st.session_state["last_evaluations"] = agent_state.evaluations
+                st.session_state["last_weights"] = user_weights
+                st.session_state["last_searches_count"] = agent_state.searches_executed
+                st.session_state["last_follow_up"] = agent_state.follow_up_performed
 
 # Results Display
 if "last_report" in st.session_state:
@@ -278,30 +270,39 @@ if "last_report" in st.session_state:
     used_model = st.session_state.get("last_model", llm_model)
     evaluations = st.session_state.get("last_evaluations", {})
     weights = st.session_state.get("last_weights", {})
+    searches_count = st.session_state.get("last_searches_count", 1)
+    follow_up_performed = st.session_state.get("last_follow_up", False)
     
     st.markdown("---")
     
     # Top Metrics Bar
-    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1, mcol2, mcol3, mcol4 = st.columns(4)
     with mcol1:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">LIVE SEARCH SOURCES</span>
-            <h3 style="margin:0; color:#38bdf8;">{len(sources)} Organic Results</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">SERPAPI SEARCHES</span>
+            <h3 style="margin:0; color:#38bdf8;">{searches_count} Queries Executed</h3>
         </div>
         """, unsafe_allow_html=True)
     with mcol2:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">SCORING ENGINE</span>
-            <h3 style="margin:0; color:#a78bfa;">Weighted Matrix (1-5)</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">DEDUPLICATED SOURCES</span>
+            <h3 style="margin:0; color:#a78bfa;">{len(sources)} Evidence Items</h3>
         </div>
         """, unsafe_allow_html=True)
     with mcol3:
         st.markdown(f"""
         <div class="metric-box">
+            <span style="font-size:0.85rem; color:#94a3b8;">AGENT CRITIC AUDIT</span>
+            <h3 style="margin:0; color:#34d399;">{'1 Follow-up' if follow_up_performed else 'Initial Passed'}</h3>
+        </div>
+        """, unsafe_allow_html=True)
+    with mcol4:
+        st.markdown(f"""
+        <div class="metric-box">
             <span style="font-size:0.85rem; color:#94a3b8;">GEMINI AI MODEL</span>
-            <h3 style="margin:0; color:#34d399;">{used_model}</h3>
+            <h3 style="margin:0; color:#f43f5e;">{used_model}</h3>
         </div>
         """, unsafe_allow_html=True)
         
@@ -323,22 +324,21 @@ if "last_report" in st.session_state:
         if matrix_md:
             st.markdown(matrix_md, unsafe_allow_html=True)
         else:
-            # Render fallback matrix from saved evaluations
             fallback_matrix = format_decision_matrix_markdown(evaluations, weights)
             st.markdown(fallback_matrix, unsafe_allow_html=True)
             
-        st.info("💡 **Scoring Methodology**: Overall scores are normalized (1.0–5.0) by taking the weighted sum of criterion scores divided by total criteria weights. Criteria ratings reflect LLM-assisted evidence extraction from live SerpApi search snippets.")
+        st.info("💡 **Scoring Methodology**: Overall scores are normalized (1.0–5.0) by taking the weighted sum of criterion scores divided by total criteria weights. Ratings are synthesized by DecisionCriticAgent from deduplicated SerpApi evidence.")
 
     with tab_sources:
         st.markdown("### 📚 Grounded Search Evidence (SerpApi)")
-        st.caption("All factual claims and recommendations above are grounded strictly in the following live organic web search results:")
+        st.caption("All factual claims and recommendations above are grounded strictly in the following deduplicated web search results:")
         
         for idx, src in enumerate(sources, start=1):
             st.markdown(f"""
             <div class="source-card">
                 <span style="color:#94a3b8; font-weight:600; font-size:0.85rem;">
                     [SOURCE {idx}] &bull; {src.get('source', '')} &bull; 
-                    <span style="color:#34d399;">Snippet Evidence Scope</span>
+                    <span style="color:#34d399;">Query: '{src.get('query_origin', 'Search')}'</span>
                 </span><br>
                 <a href="{src.get('link')}" target="_blank" class="source-title">{src.get('title')}</a>
                 <p style="margin-top:0.4rem; margin-bottom:0; color:#cbd5e1; font-size:0.92rem;">{src.get('snippet')}</p>

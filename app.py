@@ -261,6 +261,8 @@ if submit_button:
                 st.session_state["last_weights"] = user_weights
                 st.session_state["last_searches_count"] = agent_state.searches_executed
                 st.session_state["last_follow_up"] = agent_state.follow_up_performed
+                st.session_state["last_rag_passages"] = agent_state.rag_passages
+                st.session_state["last_rag_status"] = agent_state.rag_status
 
 # Results Display
 if "last_report" in st.session_state:
@@ -272,6 +274,8 @@ if "last_report" in st.session_state:
     weights = st.session_state.get("last_weights", {})
     searches_count = st.session_state.get("last_searches_count", 1)
     follow_up_performed = st.session_state.get("last_follow_up", False)
+    rag_passages = st.session_state.get("last_rag_passages", [])
+    rag_status = st.session_state.get("last_rag_status", "Not active")
     
     st.markdown("---")
     
@@ -294,8 +298,8 @@ if "last_report" in st.session_state:
     with mcol3:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">AGENT CRITIC AUDIT</span>
-            <h3 style="margin:0; color:#34d399;">{'1 Follow-up' if follow_up_performed else 'Initial Passed'}</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">IN-MEMORY RAG RETRIEVAL</span>
+            <h3 style="margin:0; color:#34d399;">{f"{len(rag_passages)} Top Passages" if rag_passages else "Snippet Fallback"}</h3>
         </div>
         """, unsafe_allow_html=True)
     with mcol4:
@@ -330,8 +334,30 @@ if "last_report" in st.session_state:
         st.info("💡 **Scoring Methodology**: Overall scores are normalized (1.0–5.0) by taking the weighted sum of criterion scores divided by total criteria weights. Ratings are synthesized by DecisionCriticAgent from deduplicated SerpApi evidence.")
 
     with tab_sources:
-        st.markdown("### 📚 Grounded Search Evidence (SerpApi)")
-        st.caption("All factual claims and recommendations above are grounded strictly in the following deduplicated web search results:")
+        st.markdown("### 🧠 Semantically Retrieved Passages (In-Memory RAG)")
+        if rag_passages:
+            st.caption("The following top relevant passage chunks were semantically retrieved from the vector store using dense embeddings (`gemini-embedding-001`) and cosine similarity:")
+            st.info("💡 **Retrieval Similarity Score**: Indicates vector search match relevance to decision criteria. *It is a retrieval score, not a factual confidence score.*")
+
+            for idx, passage in enumerate(rag_passages, start=1):
+                sim_score = passage.get("similarity_score", 0.500)
+                st.markdown(f"""
+                <div class="source-card">
+                    <span style="color:#94a3b8; font-weight:600; font-size:0.85rem;">
+                        [{passage.get('chunk_id', f'C{idx}')}] &bull;
+                        <span style="color:#38bdf8; font-weight:700;">Retrieval Similarity Score: {sim_score:.3f} (Vector Search Match)</span>
+                    </span><br>
+                    <a href="{passage.get('link')}" target="_blank" class="source-title">{passage.get('title')}</a>
+                    <p style="margin-top:0.4rem; margin-bottom:0; color:#cbd5e1; font-size:0.92rem;">{passage.get('snippet')}</p>
+                    <span style="font-size:0.75rem; color:#64748b;">Evidence Scope: Search Snippet (Not Full Page Rendered)</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning(f"⚠️ RAG Fallback Active: {rag_status}. Using raw search snippet context.")
+
+        st.divider()
+        st.markdown("### 📚 Raw Deduplicated Search Results (SerpApi)")
+        st.caption("All factual claims and recommendations above are grounded strictly in the following web search results:")
         
         for idx, src in enumerate(sources, start=1):
             st.markdown(f"""

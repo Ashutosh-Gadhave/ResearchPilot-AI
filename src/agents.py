@@ -11,6 +11,7 @@ from google.genai import errors
 from src.search_engine import execute_search
 from src.llm_analyzer import generate_decision_report, extract_json_block
 from src.scorer import parse_criteria, calculate_weighted_decision, format_decision_matrix_markdown
+from src.rag_pipeline import InMemoryVectorStore
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -36,6 +37,11 @@ class ResearchState:
     organic_results: List[Dict[str, Any]] = field(default_factory=list)
     seen_urls: Set[str] = field(default_factory=set)
     
+    # Phase 3 In-Memory RAG Data
+    rag_enabled: bool = True
+    rag_passages: List[Dict[str, Any]] = field(default_factory=list)
+    rag_status: str = "Not initialized"
+
     follow_up_performed: bool = False
     follow_up_query: Optional[str] = None
     
@@ -185,13 +191,35 @@ class DecisionCriticAgent:
     def synthesize(self, state: ResearchState) -> Dict[str, Any]:
         state.log_stage("🏆 [DecisionCriticAgent] Generating deterministic decision matrix & final grounded report...")
         
+        # Phase 3 In-Memory RAG Retrieval Step
+        if state.rag_enabled and state.organic_results:
+            try:
+                vector_store = InMemoryVectorStore(api_key=state.api_key_gemini)
+                indexed_ok = vector_store.index_evidence(state.organic_results)
+                if indexed_ok:
+                    query = f"{state.question} {state.priorities_input}"
+                    top_passages = vector_store.retrieve_relevant_passages(query, top_k=8)
+                    state.rag_passages = top_passages
+                    state.rag_status = f"Indexed {len(vector_store.indexed_passages)} chunks, retrieved top {len(top_passages)} passages"
+                    state.log_stage(f"🧠 [RAG Pipeline] In-memory RAG active: Indexed {len(vector_store.indexed_passages)} passage chunks using gemini-embedding-001, retrieved top {len(top_passages)} semantically relevant passages.")
+                else:
+                    state.rag_passages = []
+                    state.rag_status = "Fallback to raw search snippet context (Embedding API unavailable or empty)"
+                    state.log_stage("⚠️ [RAG Pipeline] Vector store indexing fallback. Passing raw search snippet context.")
+            except Exception as e:
+                logger.warning(f"RAG execution exception: {e}")
+                state.rag_passages = []
+                state.rag_status = f"Fallback due to exception: {e}"
+                state.log_stage(f"⚠️ [RAG Pipeline] Exception ({e}). Falling back to raw search snippets.")
+
         report_res = generate_decision_report(
             question=state.question,
             priorities_input=state.priorities_input,
             organic_results=state.organic_results,
             criteria_weights=state.criteria_weights,
             model_name=state.llm_model,
-            api_key=state.api_key_gemini
+            api_key=state.api_key_gemini,
+            rag_passages=state.rag_passages
         )
         
         if report_res["success"]:

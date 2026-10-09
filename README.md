@@ -53,11 +53,13 @@ graph TD
 
 - **Official SerpApi MCP Protocol Integration**: Integrates directly with SerpApi's hosted Model Context Protocol server (`https://mcp.serpapi.com/mcp`) over JSON-RPC 2.0 transport with Bearer token authentication and automatic Python SDK fallback.
 - **Multi-Agent Orchestration**: Specialized role separation (`PlannerAgent` $\rightarrow$ `ResearcherAgent` $\rightarrow$ `DecisionCriticAgent`) with explicit state passing (`ResearchState`) and gap auditing.
+- **Phase 3 Lightweight In-Memory RAG**: Dense vector embeddings (`gemini-embedding-001`) with in-memory cosine similarity ranking to extract top semantically relevant passage chunks for Gemini reasoning.
+- **Graceful RAG Fallback**: Automatic failover to raw snippet context if embedding API is offline or unauthenticated, guaranteeing zero report generation downtime.
+- **Explicit Retrieval Similarity Labeling**: Clear UI separation of `similarity_score` labeled explicitly as vector retrieval relevance, not factual confidence.
 - **Bounded Follow-Up Loop**: Automatically detects thin evidence coverage and executes up to 1 targeted follow-up search without exceeding budget caps.
 - **Unaltered Direct Source URLs**: Preserves original target URLs from SerpApi organic results without fabricating or truncating links.
 - **Deterministic Weighted Scoring**: Computes mathematical score normalization ($1.0–5.0$ scale) in Python, ensuring LLMs do not invent overall scores or rankings.
 - **Untrusted Context Defense**: Search result snippets are treated strictly as external data to prevent prompt override attacks.
-- **Multi-Model Tier Fallback**: Automatic retries and fallback across model tiers (`gemini-2.5-flash` $\rightarrow$ `gemini-2.0-flash` $\rightarrow$ `gemini-1.5-flash`).
 
 ---
 
@@ -76,12 +78,14 @@ ResearchPilot-AI/
 │   ├── mcp_adapter.py         # Official SerpApi Model Context Protocol client
 │   ├── search_engine.py       # Search engine wrapper with MCP & SDK fallback
 │   ├── llm_analyzer.py        # Gemini client integration & report generator
+│   ├── rag_pipeline.py        # In-memory vector store, chunking & cosine similarity RAG
 │   └── scorer.py              # Deterministic weighted decision scoring engine
 └── tests/
     ├── test_agents.py         # Unit tests for multi-agent workflow & budget limits
     ├── test_mcp_adapter.py    # Unit tests for MCP tool discovery, call & fallback
     ├── test_search_engine.py  # Unit tests for search execution & URL preservation
     ├── test_llm_analyzer.py   # Unit tests for Gemini prompt isolation & fallback
+    ├── test_rag_pipeline.py   # Unit tests for RAG chunking, embeddings, vector search & fallback
     └── test_scorer.py         # Unit tests for weighted decision scoring math
 ```
 
@@ -125,7 +129,7 @@ GEMINI_API_KEY=your_gemini_key_here
 
 ### 4. Run Automated Unit Tests
 
-Execute the automated test suite (27 tests, 100% mocked external calls):
+Execute the automated test suite (32 tests, 100% mocked external calls):
 
 ```bash
 python -m unittest discover tests -v

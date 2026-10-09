@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import errors
 from src.scorer import parse_criteria, calculate_weighted_decision, format_decision_matrix_markdown
+from src.rag_pipeline import format_rag_context
 
 load_dotenv()
 
@@ -50,10 +51,11 @@ def generate_decision_report(
     model_name: str = "gemini-2.5-flash",
     api_key: Optional[str] = None,
     priorities: Optional[str] = None,
+    rag_passages: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes search evidence using Gemini LLM and generates an evidence-calibrated decision report.
-    Integrates deterministic Python weighted decision scoring, evidence isolation, and citation preservation.
+    Integrates deterministic Python weighted decision scoring, evidence isolation, RAG context, and citation preservation.
     """
     import time
 
@@ -90,7 +92,12 @@ def generate_decision_report(
         criteria_weights = {c: 3 for c in parsed_criteria}
 
     criteria_list_str = ", ".join([f"{c} (Weight: {w}/5)" for c, w in criteria_weights.items()])
-    search_context = format_search_context(organic_results)
+
+    # Use semantically retrieved RAG passages if available, else fallback to search snippet context
+    if rag_passages and len(rag_passages) > 0:
+        search_context = format_rag_context(rag_passages)
+    else:
+        search_context = format_search_context(organic_results)
 
     prompt = f"""You are **ResearchPilot AI**, an elite evidence-based decision agent created for SerpApi India Hackathon 2026.
 Your goal is to provide an objective, transparent, and evidence-calibrated evaluation to answer the user's research question.

@@ -52,7 +52,8 @@ graph TD
 ## ⭐ Key Features & Differentiators
 
 - **Official SerpApi MCP Protocol Integration**: Integrates directly with SerpApi's hosted Model Context Protocol server (`https://mcp.serpapi.com/mcp`) over JSON-RPC 2.0 transport with Bearer token authentication and automatic Python SDK fallback.
-- **Multi-Agent Orchestration**: Specialized role separation (`PlannerAgent` $\rightarrow$ `ResearcherAgent` $\rightarrow$ `DecisionCriticAgent`) with explicit state passing (`ResearchState`) and gap auditing.
+- **Phase 4 Automated Research Watcher**: Persistent JSON watchlist storage (`data/watchlist.json`) with atomic writes, manual reruns, evidence drift detection, and CLI background automation.
+- **Deterministic Evidence & Score Drift**: Categorizes deltas into URL additions/removals, snippet updates, score shifts, and recommendation rank flips with explicit severity levels (`NONE`, `LOW`, `MEDIUM`, `HIGH`).
 - **Phase 3 Lightweight In-Memory RAG**: Dense vector embeddings (`gemini-embedding-001`) with in-memory cosine similarity ranking to extract top semantically relevant passage chunks for Gemini reasoning.
 - **Graceful RAG Fallback**: Automatic failover to raw snippet context if embedding API is offline or unauthenticated, guaranteeing zero report generation downtime.
 - **Explicit Retrieval Similarity Labeling**: Clear UI separation of `similarity_score` labeled explicitly as vector retrieval relevance, not factual confidence.
@@ -72,6 +73,10 @@ ResearchPilot-AI/
 ├── requirements.txt           # Dependency manifest
 ├── .env.example               # Environment variables template
 ├── README.md                  # Project documentation & Hackathon submission report
+├── data/
+│   └── .gitkeep               # Runtime watchlist storage directory
+├── scripts/
+│   └── watchlist_runner.py    # Non-blocking CLI background runner for watchlists
 ├── src/
 │   ├── __init__.py
 │   ├── agents.py              # Multi-agent orchestrator & role definitions
@@ -79,13 +84,17 @@ ResearchPilot-AI/
 │   ├── search_engine.py       # Search engine wrapper with MCP & SDK fallback
 │   ├── llm_analyzer.py        # Gemini client integration & report generator
 │   ├── rag_pipeline.py        # In-memory vector store, chunking & cosine similarity RAG
+│   ├── watchlist.py           # Atomic JSON persistence & watchlist CRUD operations
+│   ├── drift_detector.py      # Evidence URL, snippet & score drift calculation
 │   └── scorer.py              # Deterministic weighted decision scoring engine
 └── tests/
     ├── test_agents.py         # Unit tests for multi-agent workflow & budget limits
     ├── test_mcp_adapter.py    # Unit tests for MCP tool discovery, call & fallback
     ├── test_search_engine.py  # Unit tests for search execution & URL preservation
     ├── test_llm_analyzer.py   # Unit tests for Gemini prompt isolation & fallback
-    ├── test_rag_pipeline.py   # Unit tests for RAG chunking, embeddings, vector search & fallback
+    ├── test_rag_pipeline.py   # Unit tests for RAG chunking, embeddings & fallback
+    ├── test_watchlist.py      # Unit tests for watchlist JSON persistence & atomic writes
+    ├── test_drift_detector.py # Unit tests for evidence drift, score shifts & rank flips
     └── test_scorer.py         # Unit tests for weighted decision scoring math
 ```
 
@@ -129,7 +138,7 @@ GEMINI_API_KEY=your_gemini_key_here
 
 ### 4. Run Automated Unit Tests
 
-Execute the automated test suite (32 tests, 100% mocked external calls):
+Execute the automated test suite (44 tests, 100% mocked external calls):
 
 ```bash
 python -m unittest discover tests -v

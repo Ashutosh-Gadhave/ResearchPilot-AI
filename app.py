@@ -5,6 +5,14 @@ from src.search_engine import execute_search
 from src.llm_analyzer import generate_decision_report
 from src.scorer import parse_criteria, format_decision_matrix_markdown
 from src.agents import run_research_pilot_agent_workflow
+from src.watchlist import (
+    add_watchlist_item,
+    list_watchlist_items,
+    get_watchlist_item,
+    delete_watchlist_item,
+    record_watchlist_run
+)
+from src.drift_detector import detect_evidence_drift
 
 load_dotenv()
 
@@ -263,6 +271,7 @@ if submit_button:
                 st.session_state["last_follow_up"] = agent_state.follow_up_performed
                 st.session_state["last_rag_passages"] = agent_state.rag_passages
                 st.session_state["last_rag_status"] = agent_state.rag_status
+                st.session_state["last_agent_state"] = agent_state
 
 # Results Display
 if "last_report" in st.session_state:
@@ -313,10 +322,11 @@ if "last_report" in st.session_state:
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Structured Tabs View
-    tab_summary, tab_matrix, tab_sources, tab_export = st.tabs([
+    tab_summary, tab_matrix, tab_sources, tab_watcher, tab_export = st.tabs([
         "🏆 Executive Recommendation & Analysis", 
         "📊 Transparent Decision Matrix", 
         "🔗 Verified Sources & Evidence", 
+        "📡 Research Watcher & Drift",
         "📥 Report Export & Markdown"
     ])
     
@@ -370,7 +380,73 @@ if "last_report" in st.session_state:
                 <p style="margin-top:0.4rem; margin-bottom:0; color:#cbd5e1; font-size:0.92rem;">{src.get('snippet')}</p>
             </div>
             """, unsafe_allow_html=True)
-            
+
+    with tab_watcher:
+        st.markdown("### 📌 Save Current Research to Watchlist")
+        if st.button("➕ Add This Research Topic to Watchlist", use_container_width=True):
+            last_st = st.session_state.get("last_agent_state")
+            add_watchlist_item(
+                question=question_input,
+                priorities_input=priorities_input,
+                criteria_weights=weights,
+                baseline_state=last_st,
+                search_engine=search_engine,
+                llm_model=used_model
+            )
+            st.success("✅ Research topic successfully added to persistent watchlist!")
+
+        st.divider()
+        st.markdown("### 📡 Monitored Research Watchlist & Drift History")
+        saved_items = list_watchlist_items()
+
+        if not saved_items:
+            st.info("No research topics currently saved in Watchlist. Run a research prompt above and click 'Add to Watchlist'.")
+        else:
+            for item in saved_items:
+                i_id = item["id"]
+                drift = item.get("latest_drift", {})
+                severity = drift.get("severity", "NONE")
+                sev_color = "#34d399" if severity == "NONE" else "#38bdf8" if severity == "LOW" else "#fbbf24" if severity == "MEDIUM" else "#f87171"
+
+                with st.expander(f"📌 {item.get('title', 'Topic')} — Drift: [{severity}]"):
+                    st.write(f"**Question**: {item.get('question')}")
+                    st.write(f"**Priorities**: {item.get('priorities_input')}")
+                    st.write(f"**Last Checked**: {item.get('last_run_at', 'Never')}")
+                    st.markdown(f"**Drift Status**: <span style='color:{sev_color}; font-weight:700;'>{drift.get('summary', 'N/A')}</span>", unsafe_allow_html=True)
+
+                    c_b1, c_b2 = st.columns(2)
+                    with c_b1:
+                        if st.button(f"🔄 Check for Updates Now", key=f"run_{i_id}"):
+                            with st.spinner("Executing live rerun & drift check..."):
+                                new_st = run_research_pilot_agent_workflow(
+                                    question=item["question"],
+                                    priorities_input=item["priorities_input"],
+                                    criteria_weights=item.get("criteria_weights", {}),
+                                    search_engine=item.get("search_engine", "google_light"),
+                                    llm_model=item.get("llm_model", "gemini-2.5-flash"),
+                                    api_key_serpapi=active_serpapi_key,
+                                    api_key_gemini=active_gemini_key
+                                )
+                                if new_st.success:
+                                    d_res = detect_evidence_drift(
+                                        baseline_run=item.get("baseline_run"),
+                                        latest_run={
+                                            "weighted_scores": getattr(new_st, "weighted_scores", {}),
+                                            "evaluations": new_st.evaluations,
+                                            "organic_results": new_st.organic_results
+                                        }
+                                    )
+                                    record_watchlist_run(i_id, new_st, d_res)
+                                    st.success(f"Rerun complete! Drift: [{d_res['severity']}] {d_res['summary']}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Rerun failed: {new_st.error}")
+                    with c_b2:
+                        if st.button(f"🗑️ Delete Watcher", key=f"del_{i_id}"):
+                            delete_watchlist_item(i_id)
+                            st.warning("Deleted topic from watchlist.")
+                            st.rerun()
+
     with tab_export:
         st.markdown("### 📥 Export Full Research Report")
         

@@ -16,23 +16,24 @@ def parse_criteria(priorities_input: str) -> List[str]:
     return criteria if criteria else ["Performance", "Cost Efficiency", "Ease of Use", "Reliability"]
 
 def calculate_weighted_decision(
-    candidates_evaluations: Dict[str, Dict[str, float]],
+    candidates_evaluations: Dict[str, Dict[str, Any]],
     criteria_weights: Dict[str, int]
 ) -> Dict[str, Any]:
     """
-    Calculates normalized weighted scores for candidate options.
+    Calculates deterministic normalized weighted scores for candidate options.
     
     Formula:
       Weighted Score (O) = Sum(Weight(c) * Score(O, c)) / Sum(Weight(c))
       where Weight(c) in [1, 5] and Score(O, c) in [1.0, 5.0].
       
-    Returns a sorted ranking dictionary with detailed score breakdowns.
+    If evidence for a criterion is missing, it is explicitly flagged with a baseline estimate.
     """
     if not candidates_evaluations or not criteria_weights:
         return {
             "rankings": [],
             "weighted_scores": {},
             "total_weight": 0,
+            "missing_evidence_summary": {},
             "scoring_explanation": "Insufficient data to compute weighted decision matrix."
         }
 
@@ -42,18 +43,36 @@ def calculate_weighted_decision(
 
     results = {}
     rankings = []
+    missing_evidence_summary = {}
 
     for option, scores in candidates_evaluations.items():
         weighted_sum = 0.0
         breakdown = {}
+        missing_criteria = []
         
         for crit, weight in criteria_weights.items():
-            score = float(scores.get(crit, 3.0))
+            raw_score = scores.get(crit) if isinstance(scores, dict) else None
+            
+            if raw_score is None:
+                has_evidence = False
+                score = 3.0  # Neutral baseline estimate for missing evidence
+                missing_criteria.append(crit)
+            else:
+                has_evidence = True
+                try:
+                    score = float(raw_score)
+                except (ValueError, TypeError):
+                    score = 3.0
+                    has_evidence = False
+                    missing_criteria.append(crit)
+
             # Clamp score between 1.0 and 5.0
             score = max(1.0, min(5.0, score))
+            
             breakdown[crit] = {
                 "score": round(score, 2),
                 "weight": weight,
+                "has_evidence": has_evidence,
                 "weighted_contribution": round(score * weight, 2)
             }
             weighted_sum += score * weight
@@ -63,35 +82,45 @@ def calculate_weighted_decision(
         results[option] = {
             "option": option,
             "overall_score": overall_score,
-            "breakdown": breakdown
+            "breakdown": breakdown,
+            "has_missing_evidence": len(missing_criteria) > 0,
+            "missing_criteria": missing_criteria
         }
         
+        if missing_criteria:
+            missing_evidence_summary[option] = missing_criteria
+
         rankings.append({
             "option": option,
-            "overall_score": overall_score
+            "overall_score": overall_score,
+            "has_missing_evidence": len(missing_criteria) > 0
         })
 
-    # Sort rankings descending by overall_score
+    # Sort rankings deterministically descending by overall_score
     rankings.sort(key=lambda x: x["overall_score"], reverse=True)
 
+    has_any_missing = len(missing_evidence_summary) > 0
+    missing_note = " ⚠️ Some criterion ratings indicate limited search snippet evidence and rely on baseline estimates." if has_any_missing else ""
+
     explanation = (
-        f"Scores are normalized on a 1.0–5.0 scale using user criterion weights (total weight = {total_weight}). "
-        "Scores reflect LLM-assisted evaluation grounded in retrieved search snippets."
+        f"Weighted overall scores calculated deterministically in Python on a 1.0–5.0 scale (total criteria weight = {total_weight})."
+        f"{missing_note}"
     )
 
     return {
         "rankings": rankings,
         "weighted_scores": results,
         "total_weight": total_weight,
+        "missing_evidence_summary": missing_evidence_summary,
         "scoring_explanation": explanation
     }
 
 def format_decision_matrix_markdown(
-    candidates_evaluations: Dict[str, Dict[str, float]],
+    candidates_evaluations: Dict[str, Dict[str, Any]],
     criteria_weights: Dict[str, int]
 ) -> str:
     """
-    Renders a GitHub-Flavored Markdown table of the Weighted Decision Matrix.
+    Renders a GitHub-Flavored Markdown table of the Weighted Decision Matrix with explicit evidence flags.
     """
     calculation = calculate_weighted_decision(candidates_evaluations, criteria_weights)
     rankings = calculation["rankings"]
@@ -114,13 +143,21 @@ def format_decision_matrix_markdown(
         
         row_scores = []
         for c in criteria_names:
-            score = opt_data["breakdown"].get(c, {}).get("score", "-")
-            row_scores.append(str(score))
+            crit_info = opt_data["breakdown"].get(c, {})
+            score = crit_info.get("score", 3.0)
+            has_ev = crit_info.get("has_evidence", True)
+            
+            display_str = f"{score}" if has_ev else f"{score}*"
+            row_scores.append(display_str)
 
         badge = "🏆 1st" if rank_idx == 1 else f"#{rank_idx}"
         row = f"| **{opt}** | " + " | ".join(row_scores) + f" | **{overall} / 5.0** | {badge} |"
         rows.append(row)
 
     matrix_md = header + divider + "\n".join(rows) + "\n\n"
-    matrix_md += f"_*Scoring Method*: {calculation['scoring_explanation']}_\n"
+    matrix_md += f"_*Scoring Methodology*: {calculation['scoring_explanation']}_\n"
+    
+    if calculation.get("missing_evidence_summary"):
+        matrix_md += "\n_*Note*: Criteria values marked with `*` indicate baseline estimates due to unverified search snippet evidence._\n"
+
     return matrix_md

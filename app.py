@@ -3,6 +3,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from src.search_engine import execute_search
 from src.llm_analyzer import generate_decision_report
+from src.scorer import parse_criteria, format_decision_matrix_markdown
 
 load_dotenv()
 
@@ -14,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for rich aesthetics
+# Custom Styling for SaaS Experience
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
@@ -30,7 +31,7 @@ st.markdown("""
         color: #ffffff;
         border: 1px solid rgba(255, 255, 255, 0.1);
         box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-        margin-bottom: 2rem;
+        margin-bottom: 1.8rem;
     }
     
     .badge-tag {
@@ -45,15 +46,6 @@ st.markdown("""
         margin-bottom: 0.8rem;
     }
 
-    .recommendation-card {
-        background: linear-gradient(135deg, #064e3b 0%, #022c22 100%);
-        border: 1px solid #059669;
-        border-radius: 14px;
-        padding: 1.5rem;
-        color: #ecfdf5;
-        margin-bottom: 1.5rem;
-    }
-    
     .metric-box {
         background: #1e293b;
         border-radius: 12px;
@@ -132,7 +124,6 @@ with st.sidebar:
     else:
         st.warning("⚠️ Gemini Key Missing", icon="⚠️")
         
-    # Optional Manual Key Overrides
     with st.expander("Override API Keys"):
         custom_serpapi_key = st.text_input("Custom SerpApi Key", value="", type="password")
         custom_gemini_key = st.text_input("Custom Gemini Key", value="", type="password")
@@ -193,39 +184,54 @@ with col_p3:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Main Form Inputs
+# Main Inputs Form
 with st.form("research_form"):
     default_q = st.session_state.get("research_question", "Should I use PostgreSQL or DuckDB for local data analytics?")
-    default_p = st.session_state.get("decision_priorities", "Query speed, low memory consumption, ease of setup, embedded execution")
+    default_p = st.session_state.get("decision_priorities", "Query execution speed, low memory consumption, ease of setup, embedded execution")
     
     question_input = st.text_area(
         "🎯 Research Question / Decision Prompt",
         value=default_q,
-        height=100,
+        height=90,
         placeholder="e.g. Compare Option A vs Option B for my specific use case..."
     )
     
     priorities_input = st.text_input(
-        "⚙️ Key Priorities & Decision Criteria",
+        "⚙️ Key Evaluation Criteria (comma-separated)",
         value=default_p,
         placeholder="e.g. Speed, Cost, Memory, Security, Ease of maintenance"
     )
     
-    submit_button = st.form_submit_button("🚀 Run Research & Decision Analysis", use_container_width=True)
+    # Dynamic Criteria Weight Configuration
+    parsed_criteria_list = parse_criteria(priorities_input)
+    st.markdown("##### 🧮 Criteria Weight Configuration (1 = Low, 5 = Critical)")
+    
+    weight_cols = st.columns(min(len(parsed_criteria_list), 4))
+    user_weights = {}
+    for idx, crit in enumerate(parsed_criteria_list):
+        col_target = weight_cols[idx % len(weight_cols)]
+        user_weights[crit] = col_target.slider(
+            f"Weight: {crit[:18]}",
+            min_value=1,
+            max_value=5,
+            value=4 if "speed" in crit.lower() or "performance" in crit.lower() else 3,
+            key=f"w_slider_{idx}"
+        )
+    
+    submit_button = st.form_submit_button("🚀 Run Evidence Research & Transparent Scoring", use_container_width=True)
 
-# Processing & Results Output
+# Processing Execution
 if submit_button:
-    # Input Validation
     if not question_input.strip():
         st.error("Please enter a research question or decision prompt to analyze.")
     elif not active_serpapi_key:
-        st.error("SerpApi API Key is missing. Please add SERPAPI_API_KEY to your .env file.")
+        st.error("SerpApi API Key is missing. Please set SERPAPI_API_KEY in .env or sidebar.")
     elif not active_gemini_key:
-        st.error("Gemini API Key is missing. Please add GEMINI_API_KEY to your .env file.")
+        st.error("Gemini API Key is missing. Please set GEMINI_API_KEY in .env or sidebar.")
     else:
-        with st.status("🔍 Researching and Analyzing...", expanded=True) as status:
-            # Step 1: Live SerpApi Search
-            st.write(f"📡 Querying SerpApi (`{search_engine}`)...")
+        with st.status("🔍 Executing Evidence Research & Scoring...", expanded=True) as status:
+            # Step 1: Execute Live SerpApi Web Search
+            st.write(f"📡 Querying SerpApi live index (`{search_engine}`)...")
             search_response = execute_search(
                 query=question_input,
                 engine=search_engine,
@@ -238,35 +244,40 @@ if submit_button:
                 st.error(search_response["error"])
             else:
                 organic_results = search_response["organic_results"]
-                st.write(f"✓ Retrieved **{len(organic_results)}** live search results.")
+                st.write(f"✓ Retrieved **{len(organic_results)}** live search results from SerpApi.")
                 
-                # Step 2: Gemini LLM Grounded Analysis
-                st.write(f"🧠 Synthesizing evidence with Gemini (`{llm_model}`)...")
+                # Step 2: Synthesize Evidence & Generate Report with Gemini
+                st.write(f"🧠 Computing weighted decision matrix & report with Gemini (`{llm_model}`)...")
                 report_response = generate_decision_report(
                     question=question_input,
-                    priorities=priorities_input,
+                    priorities_input=priorities_input,
                     organic_results=organic_results,
+                    criteria_weights=user_weights,
                     model_name=llm_model,
                     api_key=active_gemini_key
                 )
                 
                 if not report_response["success"]:
-                    status.update(label="❌ LLM Analysis Failed", state="error", expanded=True)
+                    status.update(label="❌ Decision Analysis Failed", state="error", expanded=True)
                     st.error(report_response["error"])
                 else:
-                    status.update(label="✅ Decision Report Complete!", state="complete", expanded=False)
+                    status.update(label="✅ Evidence Analysis & Scoring Complete!", state="complete", expanded=False)
                     
-                    # Store in Session State
                     st.session_state["last_report"] = report_response["report"]
+                    st.session_state["last_matrix"] = report_response.get("matrix_md", "")
                     st.session_state["last_sources"] = organic_results
                     st.session_state["last_model"] = report_response.get("model_used", llm_model)
-                    st.session_state["last_query"] = question_input
+                    st.session_state["last_evaluations"] = report_response.get("evaluations", {})
+                    st.session_state["last_weights"] = user_weights
 
-# Display Results if Available
+# Results Display
 if "last_report" in st.session_state:
     report_text = st.session_state["last_report"]
+    matrix_md = st.session_state.get("last_matrix", "")
     sources = st.session_state.get("last_sources", [])
     used_model = st.session_state.get("last_model", llm_model)
+    evaluations = st.session_state.get("last_evaluations", {})
+    weights = st.session_state.get("last_weights", {})
     
     st.markdown("---")
     
@@ -275,57 +286,74 @@ if "last_report" in st.session_state:
     with mcol1:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">SERPAPI SEARCH RESULTS</span>
-            <h3 style="margin:0; color:#38bdf8;">{len(sources)} Sources Analyzed</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">LIVE SEARCH SOURCES</span>
+            <h3 style="margin:0; color:#38bdf8;">{len(sources)} Organic Results</h3>
         </div>
         """, unsafe_allow_html=True)
     with mcol2:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">GEMINI AI ENGINE</span>
-            <h3 style="margin:0; color:#a78bfa;">{used_model}</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">SCORING ENGINE</span>
+            <h3 style="margin:0; color:#a78bfa;">Weighted Matrix (1-5)</h3>
         </div>
         """, unsafe_allow_html=True)
     with mcol3:
         st.markdown(f"""
         <div class="metric-box">
-            <span style="font-size:0.85rem; color:#94a3b8;">DECISION STATUS</span>
-            <h3 style="margin:0; color:#34d399;">Grounded Evidence</h3>
+            <span style="font-size:0.85rem; color:#94a3b8;">GEMINI AI MODEL</span>
+            <h3 style="margin:0; color:#34d399;">{used_model}</h3>
         </div>
         """, unsafe_allow_html=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Structured Tabs View
-    tab_report, tab_sources, tab_export = st.tabs([
-        "📄 Decision Report", 
-        "🔗 Verified Evidence & Sources", 
-        "📥 Raw Markdown & Export"
+    tab_summary, tab_matrix, tab_sources, tab_export = st.tabs([
+        "🏆 Executive Recommendation & Analysis", 
+        "📊 Transparent Decision Matrix", 
+        "🔗 Verified Sources & Evidence", 
+        "📥 Report Export & Markdown"
     ])
     
-    with tab_report:
+    with tab_summary:
         st.markdown(report_text, unsafe_allow_html=True)
         
+    with tab_matrix:
+        st.markdown("### 🧮 Weighted Decision Matrix & Criterion Scores")
+        if matrix_md:
+            st.markdown(matrix_md, unsafe_allow_html=True)
+        else:
+            # Render fallback matrix from saved evaluations
+            fallback_matrix = format_decision_matrix_markdown(evaluations, weights)
+            st.markdown(fallback_matrix, unsafe_allow_html=True)
+            
+        st.info("💡 **Scoring Methodology**: Overall scores are normalized (1.0–5.0) by taking the weighted sum of criterion scores divided by total criteria weights. Criteria ratings reflect LLM-assisted evidence extraction from live SerpApi search snippets.")
+
     with tab_sources:
         st.markdown("### 📚 Grounded Search Evidence (SerpApi)")
-        st.info("The decision report above was constructed strictly from the following real-time web search results:")
+        st.caption("All factual claims and recommendations above are grounded strictly in the following live organic web search results:")
         
         for idx, src in enumerate(sources, start=1):
             st.markdown(f"""
             <div class="source-card">
-                <span style="color:#94a3b8; font-weight:600; font-size:0.85rem;">SOURCE [{idx}] &bull; {src.get('source', '')}</span><br>
+                <span style="color:#94a3b8; font-weight:600; font-size:0.85rem;">
+                    [SOURCE {idx}] &bull; {src.get('source', '')} &bull; 
+                    <span style="color:#34d399;">Snippet Evidence Scope</span>
+                </span><br>
                 <a href="{src.get('link')}" target="_blank" class="source-title">{src.get('title')}</a>
                 <p style="margin-top:0.4rem; margin-bottom:0; color:#cbd5e1; font-size:0.92rem;">{src.get('snippet')}</p>
             </div>
             """, unsafe_allow_html=True)
             
     with tab_export:
-        st.markdown("### 📥 Export Decision Report")
-        st.text_area("Markdown Output", value=report_text, height=400)
+        st.markdown("### 📥 Export Full Research Report")
+        
+        full_export_text = f"{report_text}\n\n---\n\n## 🧮 Weighted Decision Matrix\n\n{matrix_md}\n"
+        st.text_area("Markdown Report Content", value=full_export_text, height=350)
         
         st.download_button(
-            label="💾 Download Report as Markdown (.md)",
-            data=report_text,
+            label="💾 Download Decision Report (.md)",
+            data=full_export_text,
             file_name="ResearchPilot_Decision_Report.md",
             mime="text/markdown"
         )

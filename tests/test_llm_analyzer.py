@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from src.llm_analyzer import format_search_context, generate_decision_report
+from src.llm_analyzer import format_search_context, generate_decision_report, extract_json_block
 
 class TestLLMAnalyzer(unittest.TestCase):
 
-    def test_format_search_context(self):
+    def test_format_search_context_isolation(self):
         sample_results = [
             {
                 "position": 1,
@@ -17,6 +17,14 @@ class TestLLMAnalyzer(unittest.TestCase):
         self.assertIn("[Source 1]", context)
         self.assertIn("Title: PostgreSQL Docs", context)
         self.assertIn("URL: https://postgresql.org", context)
+        self.assertIn("Search Result Snippet", context)
+
+    def test_extract_json_block(self):
+        raw_text = 'Some markdown text\n```json\n{"evaluations": {"Option A": {"Speed": 5.0}}}\n```\nMore text'
+        extracted = extract_json_block(raw_text)
+        self.assertIsNotNone(extracted)
+        self.assertIn("evaluations", extracted)
+        self.assertEqual(extracted["evaluations"]["Option A"]["Speed"], 5.0)
 
     def test_empty_search_results(self):
         result = generate_decision_report("Question", "Priorities", [], api_key="fake_key")
@@ -32,16 +40,28 @@ class TestLLMAnalyzer(unittest.TestCase):
     def test_successful_report_generation(self, mock_client_cls):
         mock_client = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = "# 🏆 Recommendation Summary\nUse DuckDB for local analytics."
+        mock_response.text = (
+            "```json\n"
+            '{"candidates": ["DuckDB", "Postgres"], "evaluations": {"DuckDB": {"Speed": 5.0}, "Postgres": {"Speed": 3.0}}}\n'
+            "```\n"
+            "# 🏆 Executive Recommendation & Rationale\nUse DuckDB for local analytics."
+        )
         mock_client.models.generate_content.return_value = mock_response
         mock_client_cls.return_value = mock_client
 
         sample_results = [{"title": "DuckDB Docs", "link": "https://duckdb.org", "snippet": "Fast local SQL"}]
-        result = generate_decision_report("DuckDB vs Postgres", "Speed", sample_results, api_key="fake_key")
+        result = generate_decision_report(
+            question="DuckDB vs Postgres",
+            priorities_input="Speed",
+            organic_results=sample_results,
+            criteria_weights={"Speed": 5},
+            api_key="fake_key"
+        )
         
         self.assertTrue(result["success"])
-        self.assertIn("Recommendation Summary", result["report"])
+        self.assertIn("Executive Recommendation", result["report"])
         self.assertIn("DuckDB", result["report"])
+        self.assertTrue(len(result["matrix_md"]) > 0)
 
 if __name__ == "__main__":
     unittest.main()

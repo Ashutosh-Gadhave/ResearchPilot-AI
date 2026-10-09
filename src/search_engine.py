@@ -2,12 +2,21 @@ import os
 import json
 import logging
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from serpapi_search_tools import web_search, SerpApiSearchError
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+def extract_domain(url: str) -> str:
+    """Extracts clean domain name from URL."""
+    try:
+        parsed = urlparse(url)
+        return parsed.netloc or url
+    except Exception:
+        return url
 
 def execute_search(
     query: str,
@@ -17,6 +26,7 @@ def execute_search(
 ) -> Dict[str, Any]:
     """
     Executes web search via SerpApi search tools and returns structured results.
+    Preserves exact original URLs returned by SerpApi and annotates evidence metadata.
     """
     if api_key is None:
         api_key = os.getenv("SERPAPI_API_KEY", "")
@@ -49,7 +59,7 @@ def execute_search(
         
         raw_output = search_fn(query=cleaned_query, engine=engine)
         
-        # Parse JSON string output from web_search
+        # Parse JSON output from web_search
         results_data = {}
         if isinstance(raw_output, str):
             results_data = json.loads(raw_output)
@@ -60,12 +70,17 @@ def execute_search(
         
         structured_results: List[Dict[str, Any]] = []
         for idx, item in enumerate(raw_organic, start=1):
+            # Prefer original destination link returned by SerpApi
+            original_url = item.get("link") or item.get("redirect_link") or "#"
+            domain = item.get("displayed_link") or extract_domain(original_url)
+
             structured_results.append({
                 "position": item.get("position", idx),
                 "title": item.get("title", "Untitled Result"),
-                "link": item.get("link", "#"),
+                "link": original_url,  # Unaltered original URL
                 "snippet": item.get("snippet", "No snippet available."),
-                "source": item.get("displayed_link", item.get("link", ""))
+                "source": domain,
+                "verified_full_page": False  # Denotes search-snippet evidence scope
             })
 
         return {

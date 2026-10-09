@@ -63,5 +63,34 @@ class TestLLMAnalyzer(unittest.TestCase):
         self.assertIn("DuckDB", result["report"])
         self.assertTrue(len(result["matrix_md"]) > 0)
 
+    @patch("src.llm_analyzer.genai.Client")
+    def test_priorities_parameter_mismatch_regression(self, mock_client_cls):
+        """Regression test to verify priorities_input and priorities keyword args both work."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "# Recommendation Summary\nDuckDB"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        sample_results = [{"title": "X", "link": "https://x.com", "snippet": "Y"}]
+        
+        # Test keyword argument 'priorities_input'
+        res1 = generate_decision_report(
+            question="Q1",
+            priorities_input="Criteria 1",
+            organic_results=sample_results,
+            api_key="fake_key"
+        )
+        self.assertTrue(res1["success"])
+
+        # Test keyword argument 'priorities'
+        res2 = generate_decision_report(
+            question="Q2",
+            priorities="Criteria 2",
+            organic_results=sample_results,
+            api_key="fake_key"
+        )
+        self.assertTrue(res2["success"])
+
 if __name__ == "__main__":
     unittest.main()

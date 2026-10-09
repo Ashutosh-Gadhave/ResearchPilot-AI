@@ -44,17 +44,25 @@ def extract_json_block(text: str) -> Optional[Dict[str, Any]]:
 
 def generate_decision_report(
     question: str,
-    priorities_input: str,
-    organic_results: List[Dict[str, Any]],
+    priorities_input: str = "",
+    organic_results: Optional[List[Dict[str, Any]]] = None,
     criteria_weights: Optional[Dict[str, int]] = None,
     model_name: str = "gemini-2.5-flash",
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    priorities: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes search evidence using Gemini LLM and generates an evidence-grounded decision report.
-    Integrates transparent weighted scoring, untrusted context isolation, and source citation preservation.
+    Accepts both `priorities_input` and `priorities` keyword arguments for seamless integration.
     """
     import time
+
+    # Support backwards compatibility for priorities keyword argument
+    if priorities is not None and not priorities_input:
+        priorities_input = priorities
+
+    if organic_results is None:
+        organic_results = []
 
     if api_key is None:
         api_key = os.getenv("GEMINI_API_KEY", "")

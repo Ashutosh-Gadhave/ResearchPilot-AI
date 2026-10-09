@@ -156,7 +156,7 @@ with st.sidebar:
     st.subheader("🤖 LLM Model")
     llm_model = st.selectbox(
         "Gemini Model",
-        options=["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+        options=["gemini-3.8-flash", "gemini-2.5-flash"],
         index=0
     )
     
@@ -423,7 +423,7 @@ if "last_report" in st.session_state:
                                     priorities_input=item["priorities_input"],
                                     criteria_weights=item.get("criteria_weights", {}),
                                     search_engine=item.get("search_engine", "google_light"),
-                                    llm_model=item.get("llm_model", "gemini-2.5-flash"),
+                                    llm_model=item.get("llm_model", "gemini-3.8-flash"),
                                     api_key_serpapi=active_serpapi_key,
                                     api_key_gemini=active_gemini_key
                                 )

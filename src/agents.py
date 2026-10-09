@@ -23,7 +23,7 @@ class ResearchState:
     priorities_input: str
     criteria_weights: Dict[str, int]
     search_engine: str = "google_light"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.8-flash"
     api_key_serpapi: Optional[str] = None
     api_key_gemini: Optional[str] = None
     
@@ -61,7 +61,7 @@ class ResearchState:
 class PlannerAgent:
     """Agent 1: Deconstructs question and generates focused search queries."""
     
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.model_name = model_name
 
@@ -240,7 +240,7 @@ def run_research_pilot_agent_workflow(
     priorities_input: str,
     criteria_weights: Dict[str, int],
     search_engine: str = "google_light",
-    llm_model: str = "gemini-2.5-flash",
+    llm_model: str = "gemini-3.8-flash",
     api_key_serpapi: Optional[str] = None,
     api_key_gemini: Optional[str] = None,
     max_search_budget: int = 4,

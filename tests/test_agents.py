@@ -113,7 +113,7 @@ class TestMultiAgentWorkflow(unittest.TestCase):
             "report": "# 🏆 Executive Recommendation\nDuckDB",
             "matrix_md": "| Candidate | Overall Score |\n| DuckDB | 4.8 |",
             "evaluations": {"DuckDB": {"Speed": 5.0}},
-            "model_used": "gemini-2.5-flash"
+            "model_used": "gemini-3.8-flash"
         }
 
         state = run_research_pilot_agent_workflow(

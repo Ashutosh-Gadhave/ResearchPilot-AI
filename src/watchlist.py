@@ -92,7 +92,7 @@ def add_watchlist_item(
     baseline_state: Optional[ResearchState] = None,
     title: Optional[str] = None,
     search_engine: str = "google_light",
-    llm_model: str = "gemini-2.5-flash",
+    llm_model: str = "gemini-3.8-flash",
     filepath: str = DEFAULT_WATCHLIST_FILE
 ) -> Dict[str, Any]:
     """

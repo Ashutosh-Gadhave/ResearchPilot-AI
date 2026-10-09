@@ -61,7 +61,7 @@ def main():
                 priorities_input=item["priorities_input"],
                 criteria_weights=item.get("criteria_weights", {}),
                 search_engine=item.get("search_engine", "google_light"),
-                llm_model=item.get("llm_model", "gemini-2.5-flash"),
+                llm_model=item.get("llm_model", "gemini-3.8-flash"),
                 api_key_serpapi=serpapi_key,
                 api_key_gemini=gemini_key
             )

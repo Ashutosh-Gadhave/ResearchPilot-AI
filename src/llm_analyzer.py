@@ -48,7 +48,7 @@ def generate_decision_report(
     priorities_input: str = "",
     organic_results: Optional[List[Dict[str, Any]]] = None,
     criteria_weights: Optional[Dict[str, int]] = None,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3.8-flash",
     api_key: Optional[str] = None,
     priorities: Optional[str] = None,
     rag_passages: Optional[List[Dict[str, Any]]] = None,
@@ -168,7 +168,7 @@ List 2-3 practical next steps for testing or verifying the recommended option.
 """
 
     candidate_models = [model_name]
-    for fallback in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+    for fallback in ["gemini-3.8-flash", "gemini-2.5-flash"]:
         if fallback not in candidate_models:
             candidate_models.append(fallback)
 

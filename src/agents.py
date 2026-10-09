@@ -130,14 +130,16 @@ class ResearcherAgent:
                 state.log_stage(f"⚠️ [ResearcherAgent] Reached max search budget limit ({state.max_search_budget}).")
                 break
                 
-            state.log_stage(f"📡 [ResearcherAgent] Executing SerpApi query ({state.searches_executed+1}/{state.max_search_budget}): '{q}'")
             res = execute_search(
                 query=q,
                 engine=state.search_engine,
                 num_results=num_per_query,
-                api_key=state.api_key_serpapi
+                api_key=state.api_key_serpapi,
+                use_mcp=True
             )
             state.searches_executed += 1
+            
+            mcp_tag = " (via SerpApi MCP Protocol)" if res.get("via_mcp") else " (via SerpApi SDK fallback)"
             
             if res["success"]:
                 for item in res["organic_results"]:
@@ -148,6 +150,7 @@ class ResearcherAgent:
                         item_copy["query_origin"] = q
                         state.organic_results.append(item_copy)
                         new_items.append(item_copy)
+                state.log_stage(f"✓ [ResearcherAgent] Retrieved {len(res['organic_results'])} items for '{q}'{mcp_tag}")
         
         state.log_stage(f"✓ [ResearcherAgent] Total deduplicated evidence items: {len(state.organic_results)}")
         return new_items

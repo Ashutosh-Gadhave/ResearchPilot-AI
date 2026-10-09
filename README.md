@@ -2,7 +2,7 @@
 
 **Official Submission for SerpApi India Hackathon 2026 — AI Agents Track**
 
-ResearchPilot AI is an autonomous, evidence-grounded multi-agent decision system. It empowers software architects, technical leads, researchers, and strategic decision-makers to answer high-stakes comparative research questions. By orchestrating a specialized 3-agent workflow (**PlannerAgent**, **ResearcherAgent**, and **DecisionCriticAgent**) powered by **SerpApi Live Web Search**, **Google Gemini Intelligence**, and a **Deterministic Weighted Scoring Engine**, ResearchPilot AI transforms raw web search results into explainable, mathematical decision reports with verifiable source citations.
+ResearchPilot AI is an autonomous, evidence-grounded multi-agent decision system. It empowers software architects, technical leads, researchers, and strategic decision-makers to answer high-stakes comparative research questions. By orchestrating a specialized 3-agent workflow (**PlannerAgent**, **ResearcherAgent**, and **DecisionCriticAgent**) powered by **SerpApi Model Context Protocol (MCP)**, **Google Gemini Intelligence**, and a **Deterministic Weighted Scoring Engine**, ResearchPilot AI transforms raw web search results into explainable, mathematical decision reports with verifiable source citations.
 
 ---
 
@@ -17,9 +17,9 @@ Modern technical and purchasing decisions suffer from:
 ### The ResearchPilot AI Multi-Agent Solution
 ResearchPilot AI solves this through a structured 5-stage multi-agent pipeline:
 1. 🧠 **PlannerAgent**: Deconstructs user prompt into candidate options and targeted search queries.
-2. 📡 **ResearcherAgent**: Executes live web search via `serpapi-search-tools`, deduplicating results by URL.
+2. 📡 **ResearcherAgent**: Executes live web search via official **SerpApi MCP Protocol** (`mcp.serpapi.com`), deduplicating results by URL with automatic SDK fallback.
 3. ⚖️ **DecisionCriticAgent Audit**: Audits evidence coverage against user criteria and identifies missing information.
-4. 🔄 **Bounded Follow-up Search**: If evidence is thin and search budget permits, executes 1 targeted follow-up search query.
+4. 🔄 **Bounded Follow-up Search**: If evidence is thin and search budget permits, executes 1 targeted follow-up search query over MCP.
 5. 🏆 **Deterministic Scoring & Report**: Computes a mathematical weighted matrix $\text{Score} = \frac{\sum w_c \cdot s_c}{\sum w_c}$ normalizing options on a 1.0–5.0 scale, and generates an evidence-grounded decision report with clickable source links.
 
 ---
@@ -34,11 +34,11 @@ graph TD
     subgraph Multi-Agent Pipeline
         C --> D[Agent 1: PlannerAgent]
         D -->|Query Plan & Options| E[Agent 2: ResearcherAgent]
-        E -->|API Request| F[SerpApi Web Search Engine]
+        E -->|MCP JSON-RPC tools/call| F[SerpApi Hosted MCP Server - mcp.serpapi.com]
         F -->|Deduplicated Evidence Items| E
         E --> G[Agent 3: DecisionCriticAgent]
         G -->|Evidence Audit & Gap Check| H{Missing Evidence?}
-        H -->|Yes & Budget Available| I[Bounded Follow-up Search]
+        H -->|Yes & Budget Available| I[Bounded Follow-up Search via MCP]
         I --> E
         H -->|No / Budget Depleted| J[Deterministic Scorer - src/scorer.py]
         J --> K[LLM Report Synthesizer - src/llm_analyzer.py]
@@ -51,6 +51,7 @@ graph TD
 
 ## ⭐ Key Features & Differentiators
 
+- **Official SerpApi MCP Protocol Integration**: Integrates directly with SerpApi's hosted Model Context Protocol server (`https://mcp.serpapi.com/mcp`) over JSON-RPC 2.0 transport with Bearer token authentication and automatic Python SDK fallback.
 - **Multi-Agent Orchestration**: Specialized role separation (`PlannerAgent` $\rightarrow$ `ResearcherAgent` $\rightarrow$ `DecisionCriticAgent`) with explicit state passing (`ResearchState`) and gap auditing.
 - **Bounded Follow-Up Loop**: Automatically detects thin evidence coverage and executes up to 1 targeted follow-up search without exceeding budget caps.
 - **Unaltered Direct Source URLs**: Preserves original target URLs from SerpApi organic results without fabricating or truncating links.
@@ -72,11 +73,13 @@ ResearchPilot-AI/
 ├── src/
 │   ├── __init__.py
 │   ├── agents.py              # Multi-agent orchestrator & role definitions
-│   ├── search_engine.py       # SerpApi search wrapper & domain extractor
+│   ├── mcp_adapter.py         # Official SerpApi Model Context Protocol client
+│   ├── search_engine.py       # Search engine wrapper with MCP & SDK fallback
 │   ├── llm_analyzer.py        # Gemini client integration & report generator
 │   └── scorer.py              # Deterministic weighted decision scoring engine
 └── tests/
     ├── test_agents.py         # Unit tests for multi-agent workflow & budget limits
+    ├── test_mcp_adapter.py    # Unit tests for MCP tool discovery, call & fallback
     ├── test_search_engine.py  # Unit tests for search execution & URL preservation
     ├── test_llm_analyzer.py   # Unit tests for Gemini prompt isolation & fallback
     └── test_scorer.py         # Unit tests for weighted decision scoring math
@@ -122,7 +125,7 @@ GEMINI_API_KEY=your_gemini_key_here
 
 ### 4. Run Automated Unit Tests
 
-Execute the automated test suite (23 tests, 100% mocked external calls):
+Execute the automated test suite (27 tests, 100% mocked external calls):
 
 ```bash
 python -m unittest discover tests -v
@@ -137,6 +140,17 @@ streamlit run app.py
 ```
 
 Open your browser to `http://localhost:8501`.
+
+---
+
+## 🔌 SerpApi MCP Protocol Specifications
+
+- **Hosted Server Endpoint**: `https://mcp.serpapi.com/mcp`
+- **Transport**: JSON-RPC 2.0 over Streamable HTTP POST (`Content-Type: application/json`)
+- **Authentication**: Header-based `Authorization: Bearer SERPAPI_API_KEY`
+- **Tool Discovery**: `method: "tools/list"`
+- **Tool Execution**: `method: "tools/call"`, `name: "search"`, `arguments: {"params": {"q": "query", "engine": "google_light"}, "mode": "compact"}`
+- **Fallback**: Automatic failover to `serpapi-search-tools` Python SDK on network timeouts or HTTP errors.
 
 ---
 
@@ -158,16 +172,16 @@ Where:
 | Time | Segment | Script / Visual Guide |
 | :--- | :--- | :--- |
 | **0:00 - 0:30** | **Hook & Problem** | *"High-stakes tech decisions suffer from search noise and single-prompt LLM hallucinations. Meet ResearchPilot AI."* |
-| **0:30 - 1:15** | **Multi-Agent Pipeline** | Demonstrate launching a prompt (*Postgres vs DuckDB*). Highlight real-time UI execution of **PlannerAgent** $\rightarrow$ **ResearcherAgent** $\rightarrow$ **DecisionCriticAgent**. |
+| **0:30 - 1:15** | **MCP & Multi-Agent Pipeline** | Demonstrate launching a prompt (*Postgres vs DuckDB*). Highlight real-time UI execution of **PlannerAgent** $\rightarrow$ **SerpApi MCP Search** $\rightarrow$ **DecisionCriticAgent**. |
 | **1:15 - 2:15** | **Decision Matrix & Grounding** | Show the **Deterministic Decision Matrix**, explain the $1-5$ weighted scoring math, and click through verified **SerpApi source URLs**. |
-| **2:15 - 2:45** | **Audit Loop & Test Suite** | Demonstrate how DecisionCriticAgent triggers 1 targeted follow-up search when evidence is thin, and show 23 passing unit tests. |
-| **2:45 - 3:00** | **Closing** | *"ResearchPilot AI: Autonomous evidence-grounded decisions powered by SerpApi and Gemini. Thank you!"* |
+| **2:15 - 2:45** | **Audit Loop & Test Suite** | Demonstrate how DecisionCriticAgent triggers 1 targeted follow-up search over MCP, and show 27 passing unit tests. |
+| **2:45 - 3:00** | **Closing** | *"ResearchPilot AI: Autonomous evidence-grounded decisions powered by SerpApi MCP and Gemini. Thank you!"* |
 
 ---
 
 ## ⚠️ Limitations & Future Roadmap
 
-- **Evidence Scope**: Evidence synthesis is currently based on organic search result snippets returned by SerpApi. Future releases will integrate full HTML page rendering.
+- **Evidence Scope**: Evidence synthesis is currently based on organic search result snippets returned by SerpApi MCP. Future releases will integrate full HTML page rendering.
 - **Multi-Query Budget**: Search query budget is capped at 4 total queries per workflow run to maintain fast response times and quota efficiency.
 
 ---
@@ -177,4 +191,4 @@ Where:
 In accordance with hackathon rules, the development of ResearchPilot AI was assisted by:
 - **Google Antigravity IDE**: AI agent pair-programming environment used for code architecture, refactoring, and test creation.
 - **Gemini 3.6 Flash**: Core LLM model powering agent reasoning and decision synthesis.
-- **SerpApi Search Tools SDK (`serpapi-search-tools`)**: Official SDK for real-time web search integration.
+- **SerpApi Model Context Protocol (MCP)** & **SerpApi Search Tools SDK (`serpapi-search-tools`)**: Official APIs for real-time web search integration.

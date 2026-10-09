@@ -1,0 +1,4 @@
+serpapi-search-tools
+google-genai
+python-dotenv
+streamlit

@@ -6,8 +6,7 @@ ResearchPilot AI is an evidence-grounded multi-agent decision-support system for
 
 ## 🔗 Project Links
 
-- **GitHub Repository:** https://github.com/Ashutosh-Gadhave/ResearchPilot-AI
-- **Demo Video:** [Add your public or unlisted Google Drive video link here]
+- **Demo Video:** [https://drive.google.com/file/d/1BWrjzm-QFC4UK1rVhhXiLWmo8NPisKYk/view?usp=drive_link]
 - **Hackathon:** https://serpapi.github.io/serpapi-india-hackathon-2026/
 
 ---

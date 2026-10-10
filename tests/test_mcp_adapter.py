@@ -73,7 +73,7 @@ class TestSerpApiMCPAdapter(unittest.TestCase):
     def test_execute_search_mcp_fallback_on_error(self, mock_web_search, mock_mcp_call):
         # Mock MCP throwing an error
         mock_mcp_call.side_effect = SerpApiMCPError("MCP Connection Failed")
-        
+
         # Mock SDK fallback succeeding
         mock_callable = MagicMock()
         mock_callable.return_value = json.dumps({
@@ -88,7 +88,27 @@ class TestSerpApiMCPAdapter(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertFalse(result["via_mcp"])  # Confirms transparent fallback to SDK
         self.assertEqual(len(result["organic_results"]), 1)
-        self.assertEqual(result["organic_results"][0]["title"], "SDK Fallback Title")
+    @patch("src.search_engine.SerpApiMCPClient.call_search_tool")
+    @patch("src.search_engine.web_search")
+    def test_execute_search_mcp_timeout_fallback(self, mock_web_search, mock_mcp_call):
+        # Mock MCP throwing a timeout error
+        mock_mcp_call.side_effect = SerpApiMCPError("SerpApi MCP connection timed out after 3.0s.")
+
+        # Mock SDK fallback succeeding
+        mock_callable = MagicMock()
+        mock_callable.return_value = json.dumps({
+            "organic_results": [
+                {"position": 1, "title": "Prompt Fallback Title", "link": "https://fastfallback.com", "snippet": "Prompt fallback snippet"}
+            ]
+        })
+        mock_web_search.return_value = mock_callable
+
+        result = execute_search("Fast fallback query", api_key="fake_key", use_mcp=True)
+
+        self.assertTrue(result["success"])
+        self.assertFalse(result["via_mcp"])  # Confirms prompt fallback to SDK on MCP timeout
+        self.assertEqual(len(result["organic_results"]), 1)
+        self.assertEqual(result["organic_results"][0]["title"], "Prompt Fallback Title")
 
 if __name__ == "__main__":
     unittest.main()

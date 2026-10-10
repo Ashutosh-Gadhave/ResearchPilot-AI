@@ -100,5 +100,87 @@ class TestDriftDetector(unittest.TestCase):
         self.assertEqual(res["top_candidate_baseline"], "Option A")
         self.assertEqual(res["top_candidate_latest"], "Option B")
 
+    def test_dict_score_subtraction_bug_regression(self):
+        """
+        Regression test: Verify baseline or latest runs with dictionary-of-dictionaries
+        or empty weighted_scores with evaluations do not raise TypeError: dict - dict.
+        """
+        baseline_with_evals_only = {
+            "weighted_scores": {},
+            "evaluations": {
+                "DuckDB": {"Speed": 4.8, "Memory": 4.8},
+                "PostgreSQL": {"Speed": 2.5, "Memory": 2.5}
+            },
+            "organic_results": self.baseline["organic_results"]
+        }
+        latest_with_nested_dicts = {
+            "weighted_scores": {
+                "DuckDB": {"option": "DuckDB", "overall_score": 4.8, "breakdown": {}},
+                "PostgreSQL": {"option": "PostgreSQL", "overall_score": 2.5, "breakdown": {}}
+            },
+            "evaluations": {},
+            "organic_results": self.baseline["organic_results"]
+        }
+        res = detect_evidence_drift(baseline_with_evals_only, latest_with_nested_dicts)
+        self.assertFalse(res["is_first_run"])
+        self.assertEqual(res["severity"], SEVERITY_NONE)
+        self.assertEqual(res["score_drift"]["DuckDB"]["delta"], 0.0)
+        self.assertEqual(res["score_drift"]["PostgreSQL"]["delta"], 0.0)
+
+    def test_missing_scores_handling(self):
+        """
+        Verify missing option scores are reported as 'N/A' rather than inventing zero deltas.
+        """
+        latest_missing_opt_b = {
+            "weighted_scores": {"Option A": 4.0},
+            "evaluations": {},
+            "organic_results": self.baseline["organic_results"]
+        }
+        res = detect_evidence_drift(self.baseline, latest_missing_opt_b)
+        self.assertIn("Option B", res["score_drift"])
+        self.assertEqual(res["score_drift"]["Option B"]["baseline_score"], 3.0)
+        self.assertEqual(res["score_drift"]["Option B"]["latest_score"], "N/A")
+        self.assertEqual(res["score_drift"]["Option B"]["delta"], "N/A")
+
+    def test_malformed_scores_handling(self):
+        """
+        Verify string scores ("4.5") parse correctly while malformed values ("invalid", None) report 'N/A'.
+        """
+        baseline_malformed = {
+            "weighted_scores": {"Option A": "4.0", "Option B": "invalid_score"},
+            "organic_results": self.baseline["organic_results"]
+        }
+        latest_valid = {
+            "weighted_scores": {"Option A": 4.2, "Option B": 3.5},
+            "organic_results": self.baseline["organic_results"]
+        }
+        res = detect_evidence_drift(baseline_malformed, latest_valid)
+        self.assertEqual(res["score_drift"]["Option A"]["delta"], 0.2)
+        self.assertEqual(res["score_drift"]["Option B"]["baseline_score"], "N/A")
+        self.assertEqual(res["score_drift"]["Option B"]["delta"], "N/A")
+
+    def test_list_of_dicts_score_structure(self):
+        """
+        Verify weighted_scores passed as a list of dicts (e.g. rankings output) is parsed cleanly.
+        """
+        baseline_list = {
+            "weighted_scores": [
+                {"option": "Option A", "overall_score": 4.0},
+                {"option": "Option B", "overall_score": 3.0}
+            ],
+            "organic_results": self.baseline["organic_results"]
+        }
+        latest_list = {
+            "weighted_scores": [
+                {"option": "Option A", "overall_score": 4.5},
+                {"option": "Option B", "overall_score": 3.0}
+            ],
+            "organic_results": self.baseline["organic_results"]
+        }
+        res = detect_evidence_drift(baseline_list, latest_list)
+        self.assertEqual(res["score_drift"]["Option A"]["delta"], 0.5)
+        self.assertEqual(res["score_drift"]["Option B"]["delta"], 0.0)
+        self.assertEqual(res["severity"], SEVERITY_MEDIUM)
+
 if __name__ == "__main__":
     unittest.main()

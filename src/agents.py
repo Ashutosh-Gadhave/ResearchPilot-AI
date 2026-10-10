@@ -244,7 +244,8 @@ def run_research_pilot_agent_workflow(
     api_key_serpapi: Optional[str] = None,
     api_key_gemini: Optional[str] = None,
     max_search_budget: int = 4,
-    status_callback: Optional[Callable[[str, str], None]] = None
+    status_callback: Optional[Callable[[str, str], None]] = None,
+    baseline_run: Optional[Dict[str, Any]] = None
 ) -> ResearchState:
     """
     Orchestrates Phase 1 Multi-Agent Workflow:
@@ -254,6 +255,9 @@ def run_research_pilot_agent_workflow(
     4. Bounded Follow-up Search (Max 1 round)
     5. DecisionCriticAgent: Final Grounded Synthesis & Matrix Computation
     """
+    from src.search_engine import reset_mcp_status
+    reset_mcp_status()
+
     state = ResearchState(
         question=question,
         priorities_input=priorities_input,
@@ -295,6 +299,29 @@ def run_research_pilot_agent_workflow(
         if gap_res.get("needs_follow_up") and gap_res.get("follow_up_query"):
             update_status("ResearcherAgent", f"Executing 1 targeted follow-up search: '{gap_res['follow_up_query']}'...")
             researcher.search_queries(state, [gap_res["follow_up_query"]], num_per_query=3)
+
+        # Optimization: Check if search evidence is identical to baseline to skip redundant Gemini synthesis
+        if baseline_run and baseline_run.get("organic_results") and state.organic_results:
+            from src.drift_detector import extract_urls_and_snippets
+            base_url_map = extract_urls_and_snippets(baseline_run.get("organic_results", []))
+            latest_url_map = extract_urls_and_snippets(state.organic_results)
+
+            base_urls = set(base_url_map.keys())
+            latest_urls = set(latest_url_map.keys())
+
+            new_urls = latest_urls - base_urls
+            removed_urls = base_urls - latest_urls
+            retained_urls = base_urls.intersection(latest_urls)
+            snippet_changed = any(base_url_map[u]["snippet"].strip() != latest_url_map[u]["snippet"].strip() for u in retained_urls)
+
+            if len(new_urls) == 0 and len(removed_urls) == 0 and not snippet_changed:
+                update_status("DecisionCriticAgent", "Search evidence is identical to baseline. Reusing baseline report & skipping redundant LLM call.")
+                state.evaluations = baseline_run.get("evaluations", {})
+                state.final_report = baseline_run.get("final_report", "")
+                state.matrix_md = baseline_run.get("matrix_md", "")
+                state.rag_passages = baseline_run.get("rag_passages", [])
+                state.success = True
+                return state
 
         # Stage 5: Report Synthesis & Matrix Computation
         update_status("DecisionCriticAgent", "Finalizing deterministic weighted matrix and evidence report...")

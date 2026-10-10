@@ -117,5 +117,36 @@ class TestWatchlistPersistence(unittest.TestCase):
         self.assertEqual(len(updated_item["history"]), 1)
         self.assertEqual(updated_item["latest_drift"]["severity"], "LOW")
 
+    def test_record_watchlist_refresh_failure_preserves_history(self):
+        from src.watchlist import record_watchlist_refresh_failure
+        item = add_watchlist_item(
+            question="Postgres vs DuckDB",
+            priorities_input="Speed",
+            criteria_weights={"Speed": 5},
+            filepath=self.watchlist_file
+        )
+        item_id = item["id"]
+
+        # Record initial successful run
+        mock_state = MagicMock()
+        mock_state.success = True
+        mock_state.weighted_scores = {"DuckDB": 4.8}
+        mock_state.evaluations = {"DuckDB": {"Speed": 4.8}}
+        mock_state.organic_results = [{"title": "DuckDB Docs", "link": "https://duckdb.org"}]
+        mock_state.rag_passages = []
+        mock_state.final_report = "Base report"
+        mock_state.matrix_md = "| Base Matrix |"
+        record_watchlist_run(item_id, mock_state, {"severity": "NONE", "summary": "Baseline established."}, filepath=self.watchlist_file)
+
+        # Record refresh failure
+        recorded = record_watchlist_refresh_failure(item_id, "Gemini 503 error", filepath=self.watchlist_file)
+        self.assertTrue(recorded)
+
+        updated_item = get_watchlist_item(item_id, self.watchlist_file)
+        self.assertEqual(len(updated_item["history"]), 1)  # History length preserved
+        self.assertEqual(updated_item["latest_drift"]["severity"], "ERROR")
+        self.assertIn("Gemini 503 error", updated_item["latest_drift"]["summary"])
+        self.assertIsNotNone(updated_item["baseline_run"])  # Baseline preserved
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import logging
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
@@ -208,15 +209,24 @@ List 2-3 practical next steps for testing or verifying the recommended option.
             except errors.APIError as e:
                 last_error = str(e)
                 logger.warning(f"Gemini API Error on {current_model} (attempt {attempt+1}): {e}")
-                time.sleep(1)
+                time.sleep(1 * (attempt + 1))
             except Exception as e:
                 last_error = str(e)
                 logger.warning(f"Error on {current_model}: {e}")
-                time.sleep(1)
+                time.sleep(1 * (attempt + 1))
+
+    # Format clear user-facing error message for 503 and 429
+    err_lower = (last_error or "").lower()
+    if "503" in err_lower or "unavailable" in err_lower or "overloaded" in err_lower or "high demand" in err_lower:
+        user_error = "Gemini service is temporarily unavailable due to high demand (HTTP 503). Please try again in a few moments."
+    elif "429" in err_lower or "resource_exhausted" in err_lower or "quota" in err_lower or "rate limit" in err_lower:
+        user_error = "Gemini API rate limit or quota exceeded (HTTP 429). Please wait a moment before retrying."
+    else:
+        user_error = f"Gemini API call failed across models: {last_error}"
 
     return {
         "success": False,
-        "error": f"Gemini API call failed across models: {last_error}",
+        "error": user_error,
         "report": "",
         "matrix_md": "",
         "evaluations": {}

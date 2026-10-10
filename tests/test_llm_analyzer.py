@@ -92,5 +92,39 @@ class TestLLMAnalyzer(unittest.TestCase):
         )
         self.assertTrue(res2["success"])
 
+    @patch("src.llm_analyzer.time.sleep")
+    @patch("src.llm_analyzer.genai.Client")
+    def test_gemini_503_unavailable_handling(self, mock_client_cls, mock_sleep):
+        from google.genai.errors import APIError
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = APIError(503, {"error": {"message": "503 UNAVAILABLE: No capacity available for model on server"}})
+        mock_client_cls.return_value = mock_client
+
+        sample_results = [{"title": "X", "link": "https://x.com", "snippet": "Y"}]
+        res = generate_decision_report(
+            question="Q503",
+            organic_results=sample_results,
+            api_key="fake_key"
+        )
+        self.assertFalse(res["success"])
+        self.assertIn("temporarily unavailable due to high demand (HTTP 503)", res["error"])
+
+    @patch("src.llm_analyzer.time.sleep")
+    @patch("src.llm_analyzer.genai.Client")
+    def test_gemini_429_quota_handling(self, mock_client_cls, mock_sleep):
+        from google.genai.errors import APIError
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = APIError(429, {"error": {"message": "429 RESOURCE_EXHAUSTED: Quota exceeded for quota metric"}})
+        mock_client_cls.return_value = mock_client
+
+        sample_results = [{"title": "X", "link": "https://x.com", "snippet": "Y"}]
+        res = generate_decision_report(
+            question="Q429",
+            organic_results=sample_results,
+            api_key="fake_key"
+        )
+        self.assertFalse(res["success"])
+        self.assertIn("rate limit or quota exceeded (HTTP 429)", res["error"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,6 +11,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+_mcp_unreachable = False
+
+def reset_mcp_status():
+    """Resets the MCP unreachable circuit breaker flag."""
+    global _mcp_unreachable
+    _mcp_unreachable = False
+
 def extract_domain(url: str) -> str:
     """Extracts clean domain name from URL."""
     try:
@@ -30,6 +37,8 @@ def execute_search(
     Executes web search via SerpApi Model Context Protocol (MCP) or falls back to SerpApi Python SDK.
     Preserves exact original URLs returned by SerpApi and annotates evidence metadata.
     """
+    global _mcp_unreachable
+
     if api_key is None:
         api_key = os.getenv("SERPAPI_API_KEY", "")
     if not api_key:
@@ -54,7 +63,7 @@ def execute_search(
         }
 
     # Strategy 1: Attempt search over official SerpApi MCP Protocol (mcp.serpapi.com)
-    if use_mcp:
+    if use_mcp and not _mcp_unreachable:
         try:
             logger.info(f"Attempting search via SerpApi MCP Protocol for query: '{cleaned_query}'")
             mcp_client = SerpApiMCPClient(api_key=api_key)
@@ -87,8 +96,14 @@ def execute_search(
             }
 
         except SerpApiMCPError as e:
-            logger.warning(f"SerpApi MCP protocol attempt failed/unavailable: {e}. Falling back to Python SDK...")
+            err_msg = str(e).lower()
+            if "timed out" in err_msg or "network error" in err_msg or "http" in err_msg:
+                _mcp_unreachable = True
+                logger.warning(f"SerpApi MCP endpoint unreachable/timed out: {e}. Bypassing MCP for subsequent session queries.")
+            else:
+                logger.warning(f"SerpApi MCP protocol attempt failed/unavailable: {e}. Falling back to Python SDK...")
         except Exception as e:
+            _mcp_unreachable = True
             logger.warning(f"Unexpected MCP error: {e}. Falling back to Python SDK...")
 
     # Strategy 2: Fallback to SerpApi Python Search Tools SDK

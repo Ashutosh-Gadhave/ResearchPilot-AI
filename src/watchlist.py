@@ -156,6 +156,28 @@ def delete_watchlist_item(item_id: str, filepath: str = DEFAULT_WATCHLIST_FILE) 
         return save_watchlist(watchlist, filepath)
     return False
 
+def record_watchlist_refresh_failure(
+    item_id: str,
+    error_message: str,
+    filepath: str = DEFAULT_WATCHLIST_FILE
+) -> bool:
+    """
+    Records a failed refresh attempt for a watched item.
+    Preserves baseline_run and history, but updates latest_drift to clearly label the failure.
+    """
+    watchlist = load_watchlist(filepath)
+    item = watchlist.get("items", {}).get(item_id)
+    if not item:
+        logger.warning(f"Item {item_id} not found in watchlist.")
+        return False
+
+    item["latest_drift"] = {
+        "severity": "ERROR",
+        "summary": f"Refresh incomplete: {error_message}. Preserved last successful report."
+    }
+    watchlist["items"][item_id] = item
+    return save_watchlist(watchlist, filepath)
+
 def record_watchlist_run(
     item_id: str,
     new_state: ResearchState,
@@ -174,6 +196,12 @@ def record_watchlist_run(
 
     if not new_state.success:
         logger.warning(f"Run for item {item_id} failed. Preserving existing baseline & history.")
+        item["latest_drift"] = {
+            "severity": "ERROR",
+            "summary": f"Refresh incomplete: {new_state.error or 'Execution error'}. Preserved last successful report."
+        }
+        watchlist["items"][item_id] = item
+        save_watchlist(watchlist, filepath)
         return False
 
     now_iso = datetime.now(timezone.utc).isoformat()

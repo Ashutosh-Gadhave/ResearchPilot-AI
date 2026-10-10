@@ -25,14 +25,44 @@ def extract_urls_and_snippets(organic_results: List[Dict[str, Any]]) -> Dict[str
             }
     return url_map
 
+def extract_numeric_score(val: Any) -> Optional[float]:
+    """
+    Safely extracts a numeric float score from various possible score types:
+    - float / int
+    - string representing a float (e.g. "4.5")
+    - dict containing keys like 'overall_score', 'score', 'weighted_score', 'value'
+    Returns None if score is missing, malformed, or unparseable.
+    """
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        try:
+            return float(val.strip())
+        except (ValueError, TypeError):
+            return None
+    if isinstance(val, dict):
+        for key in ["overall_score", "score", "weighted_score", "value"]:
+            if key in val:
+                score = extract_numeric_score(val[key])
+                if score is not None:
+                    return score
+        for v in val.values():
+            score = extract_numeric_score(v)
+            if score is not None:
+                return score
+    return None
+
 def compute_option_scores_from_evaluations(
     evaluations: Dict[str, Dict[str, Any]],
     criteria_weights: Optional[Dict[str, int]] = None
 ) -> Dict[str, float]:
     """
     Computes overall weighted scores for options using src/scorer.py logic.
+    Returns a dict mapping option_name -> numeric overall float score.
     """
-    if not evaluations:
+    if not evaluations or not isinstance(evaluations, dict):
         return {}
 
     if not criteria_weights:
@@ -41,7 +71,48 @@ def compute_option_scores_from_evaluations(
         criteria_weights = {k: 3 for k in first_opt.keys()} if isinstance(first_opt, dict) else {}
 
     calc_res = calculate_weighted_decision(evaluations, criteria_weights)
-    return calc_res.get("weighted_scores", {})
+    raw_weighted = calc_res.get("weighted_scores", {})
+    scores = {}
+    if isinstance(raw_weighted, dict):
+        for opt, item in raw_weighted.items():
+            num_s = extract_numeric_score(item)
+            if num_s is not None:
+                scores[opt] = num_s
+    return scores
+
+def extract_run_scores(
+    run_data: Optional[Dict[str, Any]],
+    criteria_weights: Optional[Dict[str, int]] = None
+) -> Dict[str, Optional[float]]:
+    """
+    Extracts a mapping of option_name -> numeric_score (or None if invalid/missing)
+    from a research run dict.
+    Checks `weighted_scores` first; falls back to computing from `evaluations`.
+    """
+    if not run_data or not isinstance(run_data, dict):
+        return {}
+
+    scores: Dict[str, Optional[float]] = {}
+    raw_weighted = run_data.get("weighted_scores")
+
+    if isinstance(raw_weighted, dict) and raw_weighted:
+        for opt, val in raw_weighted.items():
+            scores[opt] = extract_numeric_score(val)
+    elif isinstance(raw_weighted, list) and raw_weighted:
+        for item in raw_weighted:
+            if isinstance(item, dict) and "option" in item:
+                opt_name = str(item["option"])
+                scores[opt_name] = extract_numeric_score(item)
+
+    # If no valid numeric scores extracted from weighted_scores, fallback to evaluations
+    if not scores or all(v is None for v in scores.values()):
+        evals = run_data.get("evaluations", {})
+        if isinstance(evals, dict) and evals:
+            computed = compute_option_scores_from_evaluations(evals, criteria_weights)
+            for opt, val in computed.items():
+                scores[opt] = extract_numeric_score(val)
+
+    return scores
 
 def detect_evidence_drift(
     baseline_run: Optional[Dict[str, Any]],
@@ -91,31 +162,39 @@ def detect_evidence_drift(
             })
 
     # 3. Decision Matrix Score & Rank Drift
-    base_evals = baseline_run.get("evaluations", {})
-    latest_evals = latest_run.get("evaluations", {})
+    base_scores = extract_run_scores(baseline_run, criteria_weights)
+    latest_scores = extract_run_scores(latest_run, criteria_weights)
 
-    base_scores = baseline_run.get("weighted_scores") or compute_option_scores_from_evaluations(base_evals, criteria_weights)
-    latest_scores = latest_run.get("weighted_scores") or compute_option_scores_from_evaluations(latest_evals, criteria_weights)
-
-    all_options = set(base_scores.keys()).union(set(latest_scores.keys()))
+    all_options = sorted(list(set(base_scores.keys()).union(set(latest_scores.keys()))))
     score_drift = {}
     max_score_abs_delta = 0.0
 
     for opt in all_options:
-        base_s = base_scores.get(opt, 0.0)
-        latest_s = latest_scores.get(opt, 0.0)
-        delta = round(latest_s - base_s, 3)
-        score_drift[opt] = {
-            "baseline_score": base_s,
-            "latest_score": latest_s,
-            "delta": delta
-        }
-        if abs(delta) > max_score_abs_delta:
-            max_score_abs_delta = abs(delta)
+        base_s = base_scores.get(opt)
+        latest_s = latest_scores.get(opt)
 
-    # Determine Top Candidate Rank Flip
-    top_base = max(base_scores.items(), key=lambda x: x[1])[0] if base_scores else None
-    top_latest = max(latest_scores.items(), key=lambda x: x[1])[0] if latest_scores else None
+        if base_s is not None and latest_s is not None:
+            delta = round(latest_s - base_s, 3)
+            score_drift[opt] = {
+                "baseline_score": base_s,
+                "latest_score": latest_s,
+                "delta": delta
+            }
+            if abs(delta) > max_score_abs_delta:
+                max_score_abs_delta = abs(delta)
+        else:
+            score_drift[opt] = {
+                "baseline_score": base_s if base_s is not None else "N/A",
+                "latest_score": latest_s if latest_s is not None else "N/A",
+                "delta": "N/A"
+            }
+
+    # Determine Top Candidate Rank Flip (using only options with valid numeric scores)
+    valid_base_scores = {k: v for k, v in base_scores.items() if v is not None}
+    valid_latest_scores = {k: v for k, v in latest_scores.items() if v is not None}
+
+    top_base = max(valid_base_scores.items(), key=lambda x: x[1])[0] if valid_base_scores else None
+    top_latest = max(valid_latest_scores.items(), key=lambda x: x[1])[0] if valid_latest_scores else None
     rank_flip = (top_base is not None and top_latest is not None and top_base != top_latest)
 
     # 4. Deterministic Severity Threshold Classification

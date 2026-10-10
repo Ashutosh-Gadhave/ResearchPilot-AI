@@ -10,7 +10,8 @@ from src.watchlist import (
     list_watchlist_items,
     get_watchlist_item,
     delete_watchlist_item,
-    record_watchlist_run
+    record_watchlist_run,
+    record_watchlist_refresh_failure
 )
 from src.drift_detector import detect_evidence_drift
 
@@ -425,7 +426,8 @@ if "last_report" in st.session_state:
                                     search_engine=item.get("search_engine", "google_light"),
                                     llm_model=item.get("llm_model", "gemini-3.8-flash"),
                                     api_key_serpapi=active_serpapi_key,
-                                    api_key_gemini=active_gemini_key
+                                    api_key_gemini=active_gemini_key,
+                                    baseline_run=item.get("baseline_run")
                                 )
                                 if new_st.success:
                                     d_res = detect_evidence_drift(
@@ -434,13 +436,16 @@ if "last_report" in st.session_state:
                                             "weighted_scores": getattr(new_st, "weighted_scores", {}),
                                             "evaluations": new_st.evaluations,
                                             "organic_results": new_st.organic_results
-                                        }
+                                        },
+                                        criteria_weights=item.get("criteria_weights")
                                     )
                                     record_watchlist_run(i_id, new_st, d_res)
                                     st.success(f"Rerun complete! Drift: [{d_res['severity']}] {d_res['summary']}")
                                     st.rerun()
                                 else:
-                                    st.error(f"Rerun failed: {new_st.error}")
+                                    record_watchlist_refresh_failure(i_id, new_st.error or "Refresh failed")
+                                    st.error(f"Refresh incomplete: {new_st.error}. Preserved last successful report.")
+                                    st.rerun()
                     with c_b2:
                         if st.button(f"🗑️ Delete Watcher", key=f"del_{i_id}"):
                             delete_watchlist_item(i_id)

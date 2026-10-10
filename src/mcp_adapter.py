@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 SERPAPI_MCP_ENDPOINT = "https://mcp.serpapi.com/mcp"
 
+DEFAULT_MCP_TIMEOUT = float(os.getenv("SERPAPI_MCP_TIMEOUT", "3.0"))
+
 class SerpApiMCPError(Exception):
     """Exception raised for errors during MCP JSON-RPC protocol communication."""
     pass
@@ -27,11 +29,11 @@ class SerpApiMCPClient:
         self,
         api_key: Optional[str] = None,
         endpoint_url: str = SERPAPI_MCP_ENDPOINT,
-        timeout: float = 15.0
+        timeout: Optional[float] = None
     ):
         self.api_key = api_key or os.getenv("SERPAPI_API_KEY", "")
         self.endpoint_url = endpoint_url
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else DEFAULT_MCP_TIMEOUT
 
     def _send_json_rpc(self, method: str, params: Optional[Dict[str, Any]] = None, req_id: int = 1) -> Dict[str, Any]:
         """Sends a JSON-RPC 2.0 request to the SerpApi MCP server endpoint."""
@@ -76,10 +78,16 @@ class SerpApiMCPClient:
                 pass
             raise SerpApiMCPError(f"HTTP {e.code} error connecting to SerpApi MCP Server: {e.reason}. {err_body}")
         except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError) or "timed out" in str(e.reason).lower():
+                raise SerpApiMCPError(f"SerpApi MCP connection timed out after {self.timeout}s.")
             raise SerpApiMCPError(f"Network error connecting to SerpApi MCP Server: {e.reason}")
+        except TimeoutError:
+            raise SerpApiMCPError(f"SerpApi MCP connection timed out after {self.timeout}s.")
         except json.JSONDecodeError as e:
             raise SerpApiMCPError(f"Failed to parse JSON response from SerpApi MCP Server: {e}")
         except Exception as e:
+            if "timed out" in str(e).lower():
+                raise SerpApiMCPError(f"SerpApi MCP connection timed out after {self.timeout}s.")
             raise SerpApiMCPError(f"Unexpected MCP protocol failure: {str(e)}")
 
     def discover_tools(self) -> List[Dict[str, Any]]:

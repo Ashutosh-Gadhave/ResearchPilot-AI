@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.watchlist import list_watchlist_items, get_watchlist_item, record_watchlist_run
+from src.watchlist import list_watchlist_items, get_watchlist_item, record_watchlist_run, record_watchlist_refresh_failure
 from src.agents import run_research_pilot_agent_workflow
 from src.drift_detector import detect_evidence_drift
 
@@ -63,11 +63,13 @@ def main():
                 search_engine=item.get("search_engine", "google_light"),
                 llm_model=item.get("llm_model", "gemini-3.8-flash"),
                 api_key_serpapi=serpapi_key,
-                api_key_gemini=gemini_key
+                api_key_gemini=gemini_key,
+                baseline_run=baseline_run
             )
 
             if not agent_state.success:
                 logger.warning(f"❌ Agent workflow failed for '{title}': {agent_state.error}")
+                record_watchlist_refresh_failure(item_id, agent_state.error or "Workflow failed", **kwargs)
                 fail_count += 1
                 continue
 
